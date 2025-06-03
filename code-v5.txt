@@ -1,0 +1,127 @@
+#define BLYNK_TEMPLATE_ID "TMPL6uEpuo9rN"
+#define BLYNK_TEMPLATE_NAME "penetasiot"
+#define BLYNK_AUTH_TOKEN "3xQZvnEaydv85lOsqfwUn9ZCVtLjcnPJ"
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <WiFiManager.h>
+
+#include <DHT.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// email : penetasiot@gmail.com
+// pass : @easypcb55
+
+#define DHTTYPE DHT22
+
+#define DHTPIN 12    // GPIO12 (D6)
+#define RELAY_PIN 13 // GPIO13 (D7)
+#define PIR_PIN 14   // GPIO14 (D5)
+#define LDR_PIN A0
+
+// LCD I2C address 0x27 or 0x3F tergantung modul
+#define COLUMS 20 // LCD columns
+#define ROWS 4    // LCD rows
+
+LiquidCrystal_I2C lcd(PCF8574_ADDR_A21_A11_A01, 4, 5, 6, 16, 11, 12, 13, 14, POSITIVE);
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup()
+{
+  Serial.begin(115200);
+
+  // Setup pin
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(PIR_PIN, INPUT);
+
+  Wire.begin(4, 5); // SDA = GPIO4 (D2), SCL = GPIO5 (D1)
+
+  // Start LCD
+  while (lcd.begin(COLUMS, ROWS, LCD_5x8DOTS, 4, 5, 400000, 250) != 1) // colums, rows, characters size, SDA, SCL, I2C speed in Hz, I2C stretch time in usec
+  {
+    Serial.println(F("PCF8574 is not connected or lcd pins declaration is wrong. Only pins numbers: 4,5,6,16,11,12,13,14 are legal."));
+    delay(5000);
+  }
+
+  lcd.print(F("PCF8574 is OK...")); //(F()) saves string to flash & keeps dynamic memory free
+  delay(2000);
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Menunggu WiFi");
+
+  // Setup WiFi menggunakan WiFiManager
+  WiFiManager wm;
+  if (!wm.autoConnect("PenetasTelur_IoT"))
+  {
+    Serial.println("Gagal konek WiFi!");
+    ESP.restart();
+  }
+
+  // Setelah WiFi terkoneksi
+  Blynk.begin(BLYNK_AUTH_TOKEN, WiFi.SSID().c_str(), WiFi.psk().c_str());
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("WiFi Tersambung");
+
+  dht.begin();
+}
+
+void loop()
+{
+  Blynk.run();
+
+  float suhu = dht.readTemperature();
+  float kelembaban = dht.readHumidity();
+  int ldr = analogRead(LDR_PIN);
+  bool gerakan = digitalRead(PIR_PIN);
+
+  // Tampilkan di LCD 20x4
+  lcd.clear(); // Opsional: jika ingin layar selalu segar
+
+  lcd.setCursor(0, 0);
+  lcd.print("Suhu: ");
+  lcd.print(suhu, 1);
+  lcd.print((char)223); // Simbol derajat
+  lcd.print("C");
+
+  lcd.setCursor(12, 0);
+  lcd.print("Kelemb: ");
+  lcd.print(kelembaban, 0);
+  lcd.print("%");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Cahaya: ");
+  lcd.print(ldr); // nilai analog
+
+  lcd.setCursor(0, 2);
+  lcd.print("Status: ");
+  lcd.print(gerakan ? "Telur Menetas" : "Tenang");
+
+  lcd.setCursor(0, 3);
+  lcd.print("Pemanas: ");
+  lcd.print(digitalRead(RELAY_PIN) == HIGH ? "MENYALA" : "MATI  ");
+
+  // Kirim ke Blynk
+  Blynk.virtualWrite(V0, suhu);
+  Blynk.virtualWrite(V1, kelembaban);
+  Blynk.virtualWrite(V2, ldr);
+  Blynk.virtualWrite(V3, gerakan);
+  Blynk.virtualWrite(V4, digitalRead(RELAY_PIN) == HIGH);
+
+  // Kontrol relay otomatis
+  if (suhu < 37.0)
+  {
+    digitalWrite(RELAY_PIN, HIGH); // Nyalakan pemanas
+  }
+  else if (suhu > 38.5)
+  {
+    digitalWrite(RELAY_PIN, LOW); // Matikan pemanas
+  }
+
+  delay(5000); // update tiap 2 detik
+}
